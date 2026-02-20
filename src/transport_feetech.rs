@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rustypot::device::{scs0009::Scs0009Controller, sts3215::Sts3215Controller};
+use rustypot::servo::feetech::{scs0009::Scs0009Controller, sts3215::Sts3215Controller};
 
 use crate::{error::MotorError, model::MotorId, transport::MotorTransport};
 
