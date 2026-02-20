@@ -25,6 +25,7 @@ class ServoResult:
     min_stop: Optional[int]
     max_stop: Optional[int]
     midpoint: Optional[int]
+    offset_written: Optional[int]
 
 
 def checksum(body: List[int]) -> int:
@@ -80,6 +81,11 @@ def write_u16(ser: serial.Serial, servo_id: int, addr: int, value: int, dry_run:
     ser.write(pkt_write(servo_id, addr, [lo, hi]))
     fr = recv_frame(ser)
     return bool(fr and len(fr) >= 6 and fr[2] == servo_id and fr[4] == 0)
+
+
+def write_i16(ser: serial.Serial, servo_id: int, addr: int, value: int, dry_run: bool) -> bool:
+    value = max(-32768, min(32767, int(value)))
+    return write_u16(ser, servo_id, addr, value & 0xFFFF, dry_run)
 
 
 def detect_stop(
@@ -157,6 +163,10 @@ def main() -> None:
     ap.add_argument("--addr-goal", type=int, default=42)
     ap.add_argument("--addr-pos", type=int, default=56)
     ap.add_argument("--addr-load", type=int, default=60)
+    ap.add_argument("--addr-offset", type=int, default=31)
+
+    ap.add_argument("--write-offset", action="store_true", help="write computed i16 offset to motor register")
+    ap.add_argument("--offset-center-tick", type=int, default=2048, help="target center tick after calibration")
 
     args = ap.parse_args()
 
@@ -207,19 +217,32 @@ def main() -> None:
             print(f"ID {sid} max_stop={max_stop}")
 
             midpoint = None
+            offset_written = None
             if min_stop is not None and max_stop is not None:
                 midpoint = (min_stop + max_stop) // 2
                 ok = write_u16(ser, sid, args.addr_goal, midpoint, dry_run)
                 print(f"ID {sid} midpoint={midpoint}, move_ok={ok}")
 
-            results.append(ServoResult(sid, min_stop, max_stop, midpoint))
+                if args.write_offset:
+                    # Offset is applied so midpoint maps toward offset_center_tick.
+                    offset = args.offset_center_tick - midpoint
+                    ok_off = write_i16(ser, sid, args.addr_offset, offset, dry_run)
+                    offset_written = offset if ok_off else None
+                    print(
+                        f"ID {sid} offset_write addr={args.addr_offset} value={offset} ok={ok_off}"
+                    )
+
+            results.append(ServoResult(sid, min_stop, max_stop, midpoint, offset_written))
 
     finally:
         ser.close()
 
     print("\n=== Suggested zero ticks ===")
     for r in results:
-        print(f"ID {r.servo_id}: zero_tick={r.midpoint} (min={r.min_stop}, max={r.max_stop})")
+        print(
+            f"ID {r.servo_id}: zero_tick={r.midpoint} (min={r.min_stop}, max={r.max_stop}), "
+            f"offset_written={r.offset_written}"
+        )
 
 
 if __name__ == "__main__":

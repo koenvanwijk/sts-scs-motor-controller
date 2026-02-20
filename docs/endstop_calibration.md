@@ -28,7 +28,8 @@ zero_tick = (min_stop + max_stop) / 2
 ```
 
 6. Move servo to `zero_tick`.
-7. Repeat for next ID.
+7. (Optional) write motor offset register so this midpoint becomes persistent in hardware.
+8. Repeat for next ID.
 
 ## Safety defaults
 
@@ -50,6 +51,19 @@ python3 scripts/calibrate_endstops.py \
 ```
 
 By default this is **DRY-RUN**. Use `--apply` to actually send goal updates.
+
+To also persist midpoint in motor offset register:
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --port /dev/tty_pink_follower_so101 \
+  --baud 1000000 \
+  --ids 1 \
+  --apply \
+  --write-offset
+```
+
+Default offset register address is `31` (configurable via `--addr-offset`).
 
 Start with one servo first:
 

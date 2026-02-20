@@ -108,6 +108,8 @@ The script can walk to both endstops slowly, monitor load, and suggest:
 zero_tick = (min_stop + max_stop) / 2
 ```
 
+It can also write a persistent motor offset (`--write-offset`) after midpoint detection.
+
 Default mode is **dry-run**; add `--apply` when you're ready.
 
 ## Roadmap
