@@ -95,6 +95,21 @@ let tick_from_deg = conv.deg_to_tick(deg);
 - Startup checks include missing-ID scan and optional voltage threshold check (default threshold `45`, i.e. ~4.5V in 0.1V units).
 - If CI fails on Linux with serial dependencies, ensure `pkg-config` and `libudev-dev` are installed.
 
+## Endstop auto-calibration (slow + monitored)
+
+I added a safe-first calibration script and visual guide:
+
+- guide: `docs/endstop_calibration.md`
+- script: `scripts/calibrate_endstops.py`
+
+The script can walk to both endstops slowly, monitor load, and suggest:
+
+```text
+zero_tick = (min_stop + max_stop) / 2
+```
+
+Default mode is **dry-run**; add `--apply` when you're ready.
+
 ## Roadmap
 
 - Model-specific safety limits and conversion helpers
