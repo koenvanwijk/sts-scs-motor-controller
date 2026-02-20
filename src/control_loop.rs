@@ -9,11 +9,18 @@ use crate::{error::MotorError, model::MotorId, transport::MotorTransport};
 pub struct ControlLoopConfig {
     pub read_period: Duration,
     pub channel_capacity: usize,
+    pub startup_voltage_threshold: Option<u8>,
+    pub startup_voltage_timeout: Duration,
 }
 
 impl Default for ControlLoopConfig {
     fn default() -> Self {
-        Self { read_period: Duration::from_millis(10), channel_capacity: 128 }
+        Self {
+            read_period: Duration::from_millis(10),
+            channel_capacity: 128,
+            startup_voltage_threshold: Some(45),
+            startup_voltage_timeout: Duration::from_secs(3),
+        }
     }
 }
 
@@ -60,6 +67,24 @@ pub fn start_control_loop<T: MotorTransport>(
     let missing = transport.scan_missing_ids(&all_ids)?;
     if !missing.is_empty() {
         return Err(MotorError::MissingMotors(missing.into_iter().map(|m| m.0).collect()));
+    }
+
+    if let Some(min_v) = cfg.startup_voltage_threshold {
+        let t0 = std::time::Instant::now();
+        loop {
+            match transport.read_voltages(&all_ids) {
+                Ok(v) if !v.is_empty() && v.iter().all(|x| *x >= min_v) => break,
+                Ok(v) if !v.is_empty() && t0.elapsed() >= cfg.startup_voltage_timeout => {
+                    let low = v.into_iter().min().unwrap_or(0);
+                    return Err(MotorError::LowVoltage(low));
+                }
+                Err(MotorError::Unsupported) => break,
+                Err(_) if t0.elapsed() >= cfg.startup_voltage_timeout => {
+                    return Err(MotorError::Communication)
+                }
+                _ => std::thread::sleep(Duration::from_millis(100)),
+            }
+        }
     }
 
     let (tx, mut rx) = mpsc::channel::<MotorCommand>(cfg.channel_capacity);

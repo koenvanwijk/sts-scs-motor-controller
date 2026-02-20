@@ -3,6 +3,8 @@ pub mod error;
 pub mod model;
 pub mod transport;
 pub mod transport_feetech;
+#[cfg(feature = "python")]
+pub mod python;
 
 pub use control_loop::{start_control_loop, ControlLoopConfig, ControlLoopHandle, MotorCommand, MotorSnapshot};
 pub use error::MotorError;

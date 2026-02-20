@@ -9,4 +9,8 @@ pub trait MotorTransport: Send + 'static {
         positions: &[f64],
     ) -> Result<(), MotorError>;
     fn set_torque(&mut self, ids: &[MotorId], enable: bool) -> Result<(), MotorError>;
+
+    fn read_voltages(&mut self, _all_ids: &[MotorId]) -> Result<Vec<u8>, MotorError> {
+        Err(MotorError::Unsupported)
+    }
 }

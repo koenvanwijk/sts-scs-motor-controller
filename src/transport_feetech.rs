@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rustypot::servo::feetech::{scs0009::Scs0009Controller, sts3215::Sts3215Controller};
+use rustypot::device::{scs0009::Scs0009Controller, sts3215::Sts3215Controller};
 
 use crate::{error::MotorError, model::MotorId, transport::MotorTransport};
 
@@ -100,6 +100,18 @@ impl MotorTransport for FeetechTransport {
                 .map_err(|_| MotorError::Communication),
             FeetechBus::Scs0009(c) => c
                 .sync_write_torque_enable(&ids, &values)
+                .map_err(|_| MotorError::Communication),
+        }
+    }
+
+    fn read_voltages(&mut self, all_ids: &[MotorId]) -> Result<Vec<u8>, MotorError> {
+        let ids: Vec<u8> = all_ids.iter().map(|x| x.0).collect();
+        match &mut self.bus {
+            FeetechBus::Sts3215(c) => c
+                .sync_read_present_voltage(&ids)
+                .map_err(|_| MotorError::Communication),
+            FeetechBus::Scs0009(c) => c
+                .sync_read_present_voltage(&ids)
                 .map_err(|_| MotorError::Communication),
         }
     }

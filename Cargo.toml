@@ -6,12 +6,17 @@ description = "Async motor control loop for Feetech STS3215 and SCS0009 servos"
 license = "MIT"
 repository = "https://github.com/kwijk/sts-scs-motor-controller"
 
+[features]
+default = []
+python = ["dep:pyo3"]
+
 [dependencies]
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 tracing = "0.1"
-rustypot = "0.6"
+rustypot = "1.4.2"
 serialport = "4"
+pyo3 = { version = "0.23", optional = true }
 
 [dev-dependencies]
 anyhow = "1"

@@ -7,10 +7,14 @@ This project mirrors the queue + control-loop pattern used in Reachy Mini's moto
 ## Status
 
 - ✅ Tokio-based control loop + command queue
+- ✅ Setup checks on startup:
+  - missing IDs scan
+  - optional voltage threshold check
 - ✅ Error model + health snapshot
 - ✅ Feetech transport wired via `rustypot`:
   - `Sts3215Controller`
   - `Scs0009Controller`
+- ✅ Optional Python bindings (feature: `python`)
 - ✅ CI workflow for build + tests
 
 ## Design
@@ -50,10 +54,26 @@ let snap = handle.last_snapshot()?;
 println!("positions: {:?}", snap.positions);
 ```
 
+## Python binding
+
+Enable with feature flag:
+
+```bash
+cargo build --features python
+```
+
+Exposed class: `FeetechPyController`
+- `new_sts3215(serial_port, ids, baudrate=1_000_000, timeout_ms=20)`
+- `get_last_positions()`
+- `set_goal_positions(ids, positions)`
+- `set_torque(ids, enabled)`
+- `close()`
+
 ## Notes
 
 - The library assumes **single owner of the serial bus** (through the control loop).
 - Default tested baudrate for current setup: **1_000_000**.
+- Startup checks include missing-ID scan and optional voltage threshold check (default threshold `45`, i.e. ~4.5V in 0.1V units).
 - If CI fails on Linux with serial dependencies, ensure `pkg-config` and `libudev-dev` are installed.
 
 ## Roadmap

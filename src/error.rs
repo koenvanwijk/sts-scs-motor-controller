@@ -10,4 +10,8 @@ pub enum MotorError {
     InvalidResponse,
     #[error("transport closed")]
     Closed,
+    #[error("feature unsupported by transport")]
+    Unsupported,
+    #[error("voltage below threshold: {0}")]
+    LowVoltage(u8),
 }

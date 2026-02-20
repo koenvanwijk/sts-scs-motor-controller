@@ -46,6 +46,7 @@ fn control_loop_updates_snapshot() {
     let cfg = ControlLoopConfig {
         read_period: Duration::from_millis(5),
         channel_capacity: 32,
+        ..Default::default()
     };
 
     let handle = start_control_loop(DummyTransport::default(), ids.clone(), cfg).unwrap();
