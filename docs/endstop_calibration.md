@@ -16,6 +16,8 @@ slow approach + load check                                                   slo
 
 ## Per-servo sequence
 
+> This version is wrap-aware (0..4095 circular encoder), so 4095→0 flips are handled correctly.
+
 1. Enable torque.
 2. Move in tiny steps toward negative direction.
 3. Watch **position delta** and **load**:
@@ -65,7 +67,17 @@ python3 scripts/calibrate_endstops.py \
 
 Default offset register address is `31` (configurable via `--addr-offset`).
 
-Start with one servo first:
+Run internal simulator test first:
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --simulate \
+  --ids 1 2 3 \
+  --apply \
+  --write-offset
+```
+
+Start with one real servo first:
 
 ```bash
 python3 scripts/calibrate_endstops.py \
