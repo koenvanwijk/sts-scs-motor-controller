@@ -78,11 +78,14 @@ use sts_scs_motor_controller::EncoderConversion;
 
 let conv = EncoderConversion::new(1234); // configurable logical zero
 let rad = conv.tick_to_rad(3500);
-let tick = conv.rad_to_tick(rad);
+let deg = conv.tick_to_deg(3500);
+let tick_from_rad = conv.rad_to_tick(rad);
+let tick_from_deg = conv.deg_to_tick(deg);
 ```
 
 - resolution: `4096` ticks per full revolution
 - supports shifted zero-point (`zero_tick`)
+- radians + degrees variants available
 - angle normalization is wrap-safe
 
 ## Notes
