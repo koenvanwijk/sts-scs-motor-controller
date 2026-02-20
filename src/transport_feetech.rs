@@ -92,15 +92,18 @@ impl MotorTransport for FeetechTransport {
 
     fn set_torque(&mut self, ids: &[MotorId], enable: bool) -> Result<(), MotorError> {
         let ids: Vec<u8> = ids.iter().map(|x| x.0).collect();
-        let values: Vec<u8> = vec![if enable { 1 } else { 0 }; ids.len()];
 
         match &mut self.bus {
-            FeetechBus::Sts3215(c) => c
-                .sync_write_torque_enable(&ids, &values)
-                .map_err(|_| MotorError::Communication),
-            FeetechBus::Scs0009(c) => c
-                .sync_write_torque_enable(&ids, &values)
-                .map_err(|_| MotorError::Communication),
+            FeetechBus::Sts3215(c) => {
+                let values: Vec<bool> = vec![enable; ids.len()];
+                c.sync_write_torque_enable(&ids, &values)
+                    .map_err(|_| MotorError::Communication)
+            }
+            FeetechBus::Scs0009(c) => {
+                let values: Vec<u8> = vec![if enable { 1 } else { 0 }; ids.len()];
+                c.sync_write_torque_enable(&ids, &values)
+                    .map_err(|_| MotorError::Communication)
+            }
         }
     }
 
