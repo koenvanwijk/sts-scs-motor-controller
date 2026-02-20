@@ -188,9 +188,21 @@ class SimBackend(Backend):
             s["load"] = 500 if stalled else max(80, min(300, 80 + moved * 3))
             return True
         if addr == 31:  # offset
+            old = u16_to_i16(s["offset"] & 0xFFFF)
+            new = u16_to_i16(value & 0xFFFF)
+            delta = new - old
+            # Simulate logical remap caused by offset write.
             s["offset"] = value & 0xFFFF
+            s["pos"] = wrap_tick(s["pos"] + delta)
+            s["goal"] = wrap_tick(s["goal"] + delta)
+            s["min"] = wrap_tick(s["min"] + delta)
+            s["max"] = wrap_tick(s["max"] + delta)
             return True
         return True
+
+
+def u16_to_i16(v: int) -> int:
+    return v if v < 32768 else v - 65536
 
 
 def write_i16(backend: Backend, servo_id: int, addr: int, value: int, dry_run: bool) -> bool:
@@ -291,6 +303,10 @@ def main() -> None:
 
     ap.add_argument("--write-offset", action="store_true", help="write computed i16 offset to motor register")
     ap.add_argument("--offset-center-tick", type=int, default=2048, help="target center tick after calibration")
+    ap.add_argument("--offset-assist", action="store_true", help="allow bounded offset shifts if a stop is unreachable without wrapping")
+    ap.add_argument("--assist-step", type=int, default=80, help="offset ticks per assist step")
+    ap.add_argument("--assist-max-total", type=int, default=800, help="max absolute assist offset from initial offset")
+    ap.add_argument("--assist-max-attempts", type=int, default=12, help="max detect/assist attempts per servo")
 
     args = ap.parse_args()
 
@@ -318,43 +334,85 @@ def main() -> None:
         for sid in args.ids:
             print(f"\n== Calibrating ID {sid} ==")
 
-            min_stop = detect_stop(
-                backend,
-                sid,
-                direction=-1,
-                pos_addr=args.addr_pos,
-                load_addr=args.addr_load,
-                goal_addr=args.addr_goal,
-                step_ticks=args.step,
-                pause_s=args.pause_ms / 1000.0,
-                stall_window=args.stall_window,
-                move_eps=args.move_eps,
-                load_threshold=args.load_threshold,
-                dry_run=dry_run,
-                no_wrap=no_wrap,
-                hard_min=args.hard_min,
-                hard_max=args.hard_max,
-            )
-            print(f"ID {sid} min_stop={min_stop}")
+            raw_off = backend.read_u16(sid, args.addr_offset)
+            initial_offset = u16_to_i16(raw_off) if raw_off is not None else 0
+            current_offset = initial_offset
 
-            max_stop = detect_stop(
-                backend,
-                sid,
-                direction=+1,
-                pos_addr=args.addr_pos,
-                load_addr=args.addr_load,
-                goal_addr=args.addr_goal,
-                step_ticks=args.step,
-                pause_s=args.pause_ms / 1000.0,
-                stall_window=args.stall_window,
-                move_eps=args.move_eps,
-                load_threshold=args.load_threshold,
-                dry_run=dry_run,
-                no_wrap=no_wrap,
-                hard_min=args.hard_min,
-                hard_max=args.hard_max,
-            )
-            print(f"ID {sid} max_stop={max_stop}")
+            min_stop: Optional[int] = None
+            max_stop: Optional[int] = None
+
+            for attempt in range(1, args.assist_max_attempts + 1):
+                min_stop = detect_stop(
+                    backend,
+                    sid,
+                    direction=-1,
+                    pos_addr=args.addr_pos,
+                    load_addr=args.addr_load,
+                    goal_addr=args.addr_goal,
+                    step_ticks=args.step,
+                    pause_s=args.pause_ms / 1000.0,
+                    stall_window=args.stall_window,
+                    move_eps=args.move_eps,
+                    load_threshold=args.load_threshold,
+                    dry_run=dry_run,
+                    no_wrap=no_wrap,
+                    hard_min=args.hard_min,
+                    hard_max=args.hard_max,
+                )
+                max_stop = detect_stop(
+                    backend,
+                    sid,
+                    direction=+1,
+                    pos_addr=args.addr_pos,
+                    load_addr=args.addr_load,
+                    goal_addr=args.addr_goal,
+                    step_ticks=args.step,
+                    pause_s=args.pause_ms / 1000.0,
+                    stall_window=args.stall_window,
+                    move_eps=args.move_eps,
+                    load_threshold=args.load_threshold,
+                    dry_run=dry_run,
+                    no_wrap=no_wrap,
+                    hard_min=args.hard_min,
+                    hard_max=args.hard_max,
+                )
+
+                print(f"ID {sid} attempt={attempt} min_stop={min_stop} max_stop={max_stop} offset={current_offset}")
+
+                min_limited = min_stop == args.hard_min
+                max_limited = max_stop == args.hard_max
+                if min_stop is not None and max_stop is not None and not (min_limited or max_limited):
+                    break
+
+                if not args.offset_assist or dry_run:
+                    break
+
+                shift = 0
+                if max_limited and not min_limited:
+                    shift = -abs(args.assist_step)
+                elif min_limited and not max_limited:
+                    shift = abs(args.assist_step)
+                elif min_limited and max_limited:
+                    shift = 0
+                elif min_stop is None and max_stop is not None:
+                    shift = abs(args.assist_step)
+                elif max_stop is None and min_stop is not None:
+                    shift = -abs(args.assist_step)
+
+                if shift == 0:
+                    break
+
+                proposed = current_offset + shift
+                if abs(proposed - initial_offset) > abs(args.assist_max_total):
+                    print(f"ID {sid} offset-assist limit reached (initial={initial_offset}, current={current_offset})")
+                    break
+
+                ok_assist = write_i16(backend, sid, args.addr_offset, proposed, dry_run=False)
+                if not ok_assist:
+                    print(f"ID {sid} offset-assist write failed")
+                    break
+                current_offset = proposed
+                print(f"ID {sid} offset-assist applied: {current_offset}")
 
             midpoint = None
             offset_written = None

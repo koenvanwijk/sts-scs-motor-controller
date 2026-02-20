@@ -67,6 +67,21 @@ python3 scripts/calibrate_endstops.py \
 
 Default offset register address is `31` (configurable via `--addr-offset`).
 
+If one side is unreachable with strict no-wrap bounds, enable bounded assist:
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --port /dev/tty_pink_follower_so101 \
+  --baud 1000000 \
+  --ids 1 \
+  --apply \
+  --offset-assist \
+  --assist-step 80 \
+  --assist-max-total 800
+```
+
+This keeps setpoint wrapping disabled, but allows small offset shifts to bring the opposite stop into range.
+
 Run internal simulator test first:
 
 ```bash

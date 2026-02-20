@@ -123,6 +123,49 @@ class TestCalibrateEndstops(unittest.TestCase):
         )
         self.assertLessEqual(stop, 2500)
 
+    def test_offset_assist_can_recover_boundary_limited_stop(self):
+        sim = mod.SimBackend([1])
+        # Force boundary-limited search window
+        max0 = mod.detect_stop(
+            sim,
+            servo_id=1,
+            direction=+1,
+            pos_addr=56,
+            load_addr=60,
+            goal_addr=42,
+            step_ticks=8,
+            pause_s=0,
+            stall_window=4,
+            move_eps=2,
+            load_threshold=300,
+            dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=2500,
+        )
+        self.assertEqual(max0, 2500)
+
+        # Assist by shifting logical frame left, then retry.
+        self.assertTrue(mod.write_i16(sim, 1, 31, -1200, dry_run=False))
+        max1 = mod.detect_stop(
+            sim,
+            servo_id=1,
+            direction=+1,
+            pos_addr=56,
+            load_addr=60,
+            goal_addr=42,
+            step_ticks=8,
+            pause_s=0,
+            stall_window=4,
+            move_eps=2,
+            load_threshold=300,
+            dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=2500,
+        )
+        self.assertLess(max1, 2500)
+
     def test_sim_offset_write_to_center_2048(self):
         sim = mod.SimBackend([1])
         min_stop = 300

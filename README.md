@@ -110,6 +110,8 @@ zero_tick = (min_stop + max_stop) / 2
 
 It can also write a persistent motor offset (`--write-offset`) after midpoint detection.
 
+New: optional **offset-assist mode** (`--offset-assist`) for cases where no-wrap limits prevent reaching a stop; it applies bounded offset nudges without ever wrapping commanded setpoints.
+
 Default mode is **dry-run**; add `--apply` when you're ready.
 
 ## Roadmap
