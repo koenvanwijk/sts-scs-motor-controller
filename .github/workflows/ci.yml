@@ -10,5 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check
-      - run: cargo test --no-run
+      - name: Check
+        run: cargo check --all-targets
+      - name: Test
+        run: cargo test --all-targets --verbose

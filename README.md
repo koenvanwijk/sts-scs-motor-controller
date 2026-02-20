@@ -21,10 +21,10 @@ This project mirrors the queue + control-loop pattern used in Reachy Mini's moto
 ## Quick start
 
 ```bash
-git clone https://github.com/kwijk/sts-scs-motor-controller.git
+git clone https://github.com/koenvanwijk/sts-scs-motor-controller.git
 cd sts-scs-motor-controller
-# build once Rust toolchain is installed
 cargo check
+cargo test
 ```
 
 ## Next steps
