@@ -211,6 +211,9 @@ def detect_stop(
     move_eps: int,
     load_threshold: int,
     dry_run: bool,
+    no_wrap: bool,
+    hard_min: int,
+    hard_max: int,
 ) -> Optional[int]:
     pos_hist: List[int] = []
 
@@ -219,7 +222,19 @@ def detect_stop(
         return None
 
     for _ in range(2000):
-        target = wrap_tick(current + direction * step_ticks)
+        proposed = current + direction * step_ticks
+        boundary_hit = False
+        if no_wrap:
+            if proposed < hard_min:
+                proposed = hard_min
+                boundary_hit = True
+            elif proposed > hard_max:
+                proposed = hard_max
+                boundary_hit = True
+            target = proposed
+        else:
+            target = wrap_tick(proposed)
+
         ok = backend.write_u16(servo_id, goal_addr, target, dry_run)
         if not ok:
             return None
@@ -244,6 +259,10 @@ def detect_stop(
 
         current = pos
 
+        if no_wrap and boundary_hit:
+            # Reached configured command boundary without wrapping.
+            return current
+
     return None
 
 
@@ -259,6 +278,10 @@ def main() -> None:
     ap.add_argument("--stall-window", type=int, default=6)
     ap.add_argument("--move-eps", type=int, default=2)
     ap.add_argument("--load-threshold", type=int, default=300)
+    ap.add_argument("--no-wrap", action="store_true", default=True, help="never command setpoints across 0/4095 during calibration")
+    ap.add_argument("--allow-wrap", action="store_true", help="disable no-wrap protection")
+    ap.add_argument("--hard-min", type=int, default=0)
+    ap.add_argument("--hard-max", type=int, default=4095)
 
     # register defaults for STS-like map
     ap.add_argument("--addr-goal", type=int, default=42)
@@ -272,7 +295,9 @@ def main() -> None:
     args = ap.parse_args()
 
     dry_run = not args.apply
+    no_wrap = args.no_wrap and not args.allow_wrap
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
+    print(f"Setpoint wrapping: {'DISABLED' if no_wrap else 'ENABLED'}")
 
     backend: Backend
     serial_backend: Optional[SerialBackend] = None
@@ -306,6 +331,9 @@ def main() -> None:
                 move_eps=args.move_eps,
                 load_threshold=args.load_threshold,
                 dry_run=dry_run,
+                no_wrap=no_wrap,
+                hard_min=args.hard_min,
+                hard_max=args.hard_max,
             )
             print(f"ID {sid} min_stop={min_stop}")
 
@@ -322,6 +350,9 @@ def main() -> None:
                 move_eps=args.move_eps,
                 load_threshold=args.load_threshold,
                 dry_run=dry_run,
+                no_wrap=no_wrap,
+                hard_min=args.hard_min,
+                hard_max=args.hard_max,
             )
             print(f"ID {sid} max_stop={max_stop}")
 

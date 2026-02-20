@@ -55,6 +55,9 @@ class TestCalibrateEndstops(unittest.TestCase):
             move_eps=2,
             load_threshold=300,
             dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=4095,
         )
         max_stop = mod.detect_stop(
             sim,
@@ -69,6 +72,9 @@ class TestCalibrateEndstops(unittest.TestCase):
             move_eps=2,
             load_threshold=300,
             dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=4095,
         )
         self.assertEqual(min_stop, 300)
         self.assertEqual(max_stop, 3300)
@@ -89,8 +95,33 @@ class TestCalibrateEndstops(unittest.TestCase):
             move_eps=2,
             load_threshold=1200,
             dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=4095,
         )
         self.assertIsNone(min_stop)
+
+    def test_no_wrap_honors_hard_bounds(self):
+        sim = mod.SimBackend([1])
+        # very tight bounds force early boundary stop without wrapping command
+        stop = mod.detect_stop(
+            sim,
+            servo_id=1,
+            direction=+1,
+            pos_addr=56,
+            load_addr=60,
+            goal_addr=42,
+            step_ticks=50,
+            pause_s=0,
+            stall_window=3,
+            move_eps=1,
+            load_threshold=900,
+            dry_run=False,
+            no_wrap=True,
+            hard_min=0,
+            hard_max=2500,
+        )
+        self.assertLessEqual(stop, 2500)
 
     def test_sim_offset_write_to_center_2048(self):
         sim = mod.SimBackend([1])
@@ -121,6 +152,9 @@ class TestCalibrateEndstops(unittest.TestCase):
                 move_eps=2,
                 load_threshold=300,
                 dry_run=False,
+                no_wrap=True,
+                hard_min=0,
+                hard_max=4095,
             )
             mx = mod.detect_stop(
                 sim,
@@ -135,6 +169,9 @@ class TestCalibrateEndstops(unittest.TestCase):
                 move_eps=2,
                 load_threshold=300,
                 dry_run=False,
+                no_wrap=True,
+                hard_min=0,
+                hard_max=4095,
             )
             self.assertIsNotNone(mn)
             self.assertIsNotNone(mx)
