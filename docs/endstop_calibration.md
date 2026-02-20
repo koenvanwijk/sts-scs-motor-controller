@@ -23,10 +23,10 @@ slow approach + load check                                                   slo
 3. Watch **position delta** and **load**:
    - If position barely changes for several samples AND load crosses threshold => stop found.
 4. Repeat to positive direction.
-5. Compute midpoint:
+5. Compute midpoint on the circular encoder domain:
 
 ```text
-zero_tick = (min_stop + max_stop) / 2
+zero_tick = circular_midpoint(min_stop, max_stop)
 ```
 
 6. Move servo to `zero_tick`.
@@ -53,6 +53,8 @@ python3 scripts/calibrate_endstops.py \
 ```
 
 By default this is **DRY-RUN**. Use `--apply` to actually send goal updates.
+
+By default setpoint wrapping is disabled (`--no-wrap` behavior). Use `--allow-wrap` only for debugging.
 
 To also persist midpoint in motor offset register:
 

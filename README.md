@@ -102,10 +102,10 @@ I added a safe-first calibration script and visual guide:
 - guide: `docs/endstop_calibration.md`
 - script: `scripts/calibrate_endstops.py`
 
-The script can walk to both endstops slowly, monitor load, and suggest:
+The script can walk to both endstops slowly, monitor load, and suggest a **circular midpoint**:
 
 ```text
-zero_tick = (min_stop + max_stop) / 2
+zero_tick = circular_midpoint(min_stop, max_stop)
 ```
 
 It can also write a persistent motor offset (`--write-offset`) after midpoint detection.
@@ -118,7 +118,7 @@ Default mode is **dry-run**; add `--apply` when you're ready.
 
 - Model-specific safety limits and conversion helpers
 - Better diagnostics/recovery helpers
-- Optional Python bindings (PyO3/maturin)
+- Packaging/release polish for Python wheel distribution
 
 ## License
 
