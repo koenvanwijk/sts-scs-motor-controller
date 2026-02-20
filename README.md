@@ -9,7 +9,7 @@ This project mirrors the queue + control-loop pattern used in Reachy Mini's moto
 - ✅ Project scaffolded
 - ✅ Tokio-based control loop + command queue
 - ✅ Error model and health state
-- 🚧 Real Feetech transport integration (next)
+- ✅ Feetech transport wired via `rustypot` (`Sts3215Controller` / `Scs0009Controller`)
 
 ## Design
 

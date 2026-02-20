@@ -10,6 +10,8 @@ repository = "https://github.com/kwijk/sts-scs-motor-controller"
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 tracing = "0.1"
+rustypot = "0.6"
+serialport = "4"
 
 [dev-dependencies]
 anyhow = "1"
