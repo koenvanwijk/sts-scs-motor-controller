@@ -90,15 +90,15 @@ fn control_loop_rejects_missing_motors() {
         }
     }
 
-    let err = start_control_loop(
+    let res = start_control_loop(
         MissingTransport,
         vec![MotorId(1), MotorId(2)],
         ControlLoopConfig::default(),
-    )
-    .unwrap_err();
+    );
 
-    match err {
-        MotorError::MissingMotors(ids) => assert_eq!(ids, vec![1]),
-        other => panic!("unexpected error: {other:?}"),
+    match res {
+        Err(MotorError::MissingMotors(ids)) => assert_eq!(ids, vec![1]),
+        Err(other) => panic!("unexpected error: {other:?}"),
+        Ok(_) => panic!("expected MissingMotors error"),
     }
 }
