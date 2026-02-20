@@ -69,6 +69,22 @@ Exposed class: `FeetechPyController`
 - `set_torque(ids, enabled)`
 - `close()`
 
+## Conversion helpers (4096 ticks/rev + configurable zero)
+
+`EncoderConversion` is included for 12-bit encoders:
+
+```rust
+use sts_scs_motor_controller::EncoderConversion;
+
+let conv = EncoderConversion::new(1234); // configurable logical zero
+let rad = conv.tick_to_rad(3500);
+let tick = conv.rad_to_tick(rad);
+```
+
+- resolution: `4096` ticks per full revolution
+- supports shifted zero-point (`zero_tick`)
+- angle normalization is wrap-safe
+
 ## Notes
 
 - The library assumes **single owner of the serial bus** (through the control loop).
