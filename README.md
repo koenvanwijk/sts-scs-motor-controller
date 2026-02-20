@@ -6,10 +6,12 @@ This project mirrors the queue + control-loop pattern used in Reachy Mini's moto
 
 ## Status
 
-- ✅ Project scaffolded
 - ✅ Tokio-based control loop + command queue
-- ✅ Error model and health state
-- ✅ Feetech transport wired via `rustypot` (`Sts3215Controller` / `Scs0009Controller`)
+- ✅ Error model + health snapshot
+- ✅ Feetech transport wired via `rustypot`:
+  - `Sts3215Controller`
+  - `Scs0009Controller`
+- ✅ CI workflow for build + tests
 
 ## Design
 
@@ -27,11 +29,38 @@ cargo check
 cargo test
 ```
 
-## Next steps
+## Minimal usage (STS3215)
 
-1. Implement `MotorTransport` for your Feetech serial protocol implementation.
-2. Wire model-specific register maps for STS3215 and SCS0009.
-3. Add Python bindings (PyO3/maturin) if needed.
+```rust
+use std::time::Duration;
+use sts_scs_motor_controller::{
+    start_control_loop, ControlLoopConfig, FeetechTransport, MotorId,
+};
+
+let transport = FeetechTransport::new_sts3215(
+    "/dev/tty_pink_follower_so101", // or your tty device
+    1_000_000,
+    Duration::from_millis(20),
+)?;
+
+let ids = vec![MotorId(1), MotorId(2), MotorId(3), MotorId(4), MotorId(5), MotorId(6)];
+let handle = start_control_loop(transport, ids, ControlLoopConfig::default())?;
+
+let snap = handle.last_snapshot()?;
+println!("positions: {:?}", snap.positions);
+```
+
+## Notes
+
+- The library assumes **single owner of the serial bus** (through the control loop).
+- Default tested baudrate for current setup: **1_000_000**.
+- If CI fails on Linux with serial dependencies, ensure `pkg-config` and `libudev-dev` are installed.
+
+## Roadmap
+
+- Model-specific safety limits and conversion helpers
+- Better diagnostics/recovery helpers
+- Optional Python bindings (PyO3/maturin)
 
 ## License
 
