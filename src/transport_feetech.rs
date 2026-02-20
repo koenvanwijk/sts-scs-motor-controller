@@ -92,7 +92,7 @@ impl MotorTransport for FeetechTransport {
 
     fn set_torque(&mut self, ids: &[MotorId], enable: bool) -> Result<(), MotorError> {
         let ids: Vec<u8> = ids.iter().map(|x| x.0).collect();
-        let values = vec![enable; ids.len()];
+        let values: Vec<u8> = vec![if enable { 1 } else { 0 }; ids.len()];
 
         match &mut self.bus {
             FeetechBus::Sts3215(c) => c
