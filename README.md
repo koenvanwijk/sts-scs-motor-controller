@@ -119,6 +119,15 @@ python3 scripts/calibrate_endstops.py \
 
 Then open `http://<host-ip>:8765` from your phone browser.
 
+For a continuous movement demo (without calibration flow), add `--demo-loop`:
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --simulate --visualize-web --demo-loop \
+  --web-bind 0.0.0.0 --web-port 8765 \
+  --ids 1 2 3 4 5 6
+```
+
 ```text
 zero_tick = circular_midpoint(min_stop, max_stop)
 ```

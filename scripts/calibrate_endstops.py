@@ -13,6 +13,7 @@ Default is SAFE-DRY-RUN (no writes).
 """
 
 import argparse
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -535,6 +536,7 @@ def main() -> None:
     ap.add_argument("--web-bind", default="127.0.0.1", help="bind address for --visualize-web")
     ap.add_argument("--web-port", type=int, default=8765, help="port for --visualize-web")
     ap.add_argument("--apply", action="store_true", help="actually send goal positions (default dry-run)")
+    ap.add_argument("--demo-loop", action="store_true", help="run continuous simulated motion demo (simulate mode)")
     ap.add_argument("--step", type=int, default=4, help="ticks per step")
     ap.add_argument("--pause-ms", type=int, default=60)
     ap.add_argument("--stall-window", type=int, default=6)
@@ -560,8 +562,8 @@ def main() -> None:
 
     args = ap.parse_args()
 
-    if (args.visualize or args.visualize_web) and not args.simulate:
-        raise SystemExit("--visualize/--visualize-web only work with --simulate")
+    if (args.visualize or args.visualize_web or args.demo_loop) and not args.simulate:
+        raise SystemExit("--visualize/--visualize-web/--demo-loop only work with --simulate")
     if args.visualize and args.visualize_web:
         raise SystemExit("choose only one: --visualize OR --visualize-web")
 
@@ -594,6 +596,30 @@ def main() -> None:
         serial_backend = SerialBackend(args.port, args.baud)
         backend = serial_backend
         print(f"Backend: SERIAL {args.port} @ {args.baud}")
+
+    if args.demo_loop:
+        if not args.apply:
+            print("[demo] enabling apply mode automatically for simulator demo")
+        print("[demo] running continuous motion demo. Press Ctrl+C to stop.")
+        t0 = time.time()
+        try:
+            while True:
+                t = time.time() - t0
+                for i, sid in enumerate(args.ids):
+                    base = 2048 + int(900 * math.sin(t * 0.9 + i * 0.7))
+                    goal = wrap_tick(base)
+                    backend.write_u16(sid, args.addr_goal, goal, dry_run=False)
+                if visualizer:
+                    visualizer.update(force=True)
+                time.sleep(max(0.02, args.viz_refresh_ms / 1000.0))
+        except KeyboardInterrupt:
+            print("\n[demo] stopped")
+        finally:
+            if serial_backend is not None:
+                serial_backend.close()
+            if visualizer is not None:
+                visualizer.close()
+        return
 
     results: List[ServoResult] = []
 
