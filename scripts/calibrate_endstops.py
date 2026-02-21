@@ -318,6 +318,7 @@ class WebSimulationVisualizer:
         self.ids = ids
         self.refresh_s = max(0.04, refresh_ms / 1000.0)
         self._last_update = 0.0
+        self._frame_no = 0
         self.plt = plt
 
         self._tmp = TemporaryDirectory(prefix="endstop-viz-")
@@ -348,7 +349,14 @@ class WebSimulationVisualizer:
 
         self.info = self.ax.text(-1.75, -1.7, "", fontsize=8, va="bottom")
 
-        handler = partial(SimpleHTTPRequestHandler, directory=str(self.root))
+        class NoCacheHandler(SimpleHTTPRequestHandler):
+            def end_headers(self):
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
+                super().end_headers()
+
+        handler = partial(NoCacheHandler, directory=str(self.root))
         self.httpd = ThreadingHTTPServer((bind, port), handler)
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self._thread.start()
@@ -424,6 +432,8 @@ class WebSimulationVisualizer:
             goal_dot.set_data([xg], [yg])
             lines.append(f"ID {sid}: pos={s['pos']} goal={s['goal']} load={s['load']} off={u16_to_i16(s['offset'])}")
 
+        self._frame_no += 1
+        lines.append(f"frame={self._frame_no} t={time.strftime('%H:%M:%S')}")
         self.info.set_text("\n".join(lines))
         self.fig.tight_layout()
         self.fig.savefig(self.frame_path)
