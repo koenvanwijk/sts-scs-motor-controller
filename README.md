@@ -109,6 +109,17 @@ In simulator mode, you can now also open a **live 2D visualization** of each ser
 python3 scripts/calibrate_endstops.py --simulate --visualize --ids 1 2 3
 ```
 
+For SO101-style setups (5 joints + gripper), add a planar arm view:
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --simulate --visualize --arm-view \
+  --ids 1 2 3 4 5 6 \
+  --link-lengths 0.32,0.27,0.22,0.16,0.12
+```
+
+(Arm view uses the first 5 IDs as joints; gripper is still shown in ring view.)
+
 
 ```text
 zero_tick = circular_midpoint(min_stop, max_stop)

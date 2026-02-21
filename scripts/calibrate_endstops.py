@@ -13,6 +13,7 @@ Default is SAFE-DRY-RUN (no writes).
 """
 
 import argparse
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
@@ -202,7 +203,14 @@ class SimBackend(Backend):
 
 
 class SimulationVisualizer:
-    def __init__(self, sim: SimBackend, ids: List[int], refresh_ms: int = 40):
+    def __init__(
+        self,
+        sim: SimBackend,
+        ids: List[int],
+        refresh_ms: int = 40,
+        arm_view: bool = False,
+        link_lengths: Optional[List[float]] = None,
+    ):
         try:
             import matplotlib.pyplot as plt
         except Exception as exc:
@@ -214,10 +222,19 @@ class SimulationVisualizer:
         self.ids = ids
         self.refresh_s = max(0.01, refresh_ms / 1000.0)
         self._last_update = 0.0
+        self.arm_view = arm_view
+        self.link_lengths = link_lengths or [0.32, 0.27, 0.22, 0.16, 0.12]
 
         self.plt = plt
-        self.fig, self.ax = plt.subplots(figsize=(7, 7))
-        self.ax.set_title("Endstop simulator (2D)")
+        self.fig, axes = plt.subplots(1, 2 if arm_view else 1, figsize=(12 if arm_view else 7, 7))
+        if arm_view:
+            self.ax = axes[0]
+            self.ax_arm = axes[1]
+        else:
+            self.ax = axes
+            self.ax_arm = None
+
+        self.ax.set_title("Endstop simulator (rings)")
         self.ax.set_aspect("equal", adjustable="box")
         self.ax.set_xlim(-1.8, 1.8)
         self.ax.set_ylim(-1.8, 1.8)
@@ -240,6 +257,17 @@ class SimulationVisualizer:
             self._goal[sid] = (ring, goal_dot)
 
         self.info = self.ax.text(-1.75, -1.7, "", fontsize=8, va="bottom")
+
+        if self.ax_arm is not None:
+            self.ax_arm.set_title("SO101 planar arm (5 joints)")
+            self.ax_arm.set_aspect("equal", adjustable="box")
+            reach = max(0.2, sum(self.link_lengths[:5]) * 1.1)
+            self.ax_arm.set_xlim(-reach, reach)
+            self.ax_arm.set_ylim(-reach, reach)
+            self.ax_arm.grid(True, alpha=0.25)
+            self.arm_line = self.ax_arm.plot([], [], "-o", linewidth=2)[0]
+            self.arm_goal_line = self.ax_arm.plot([], [], "--x", linewidth=1.5, alpha=0.7)[0]
+
         self.plt.ion()
         self.update(force=True)
 
@@ -264,6 +292,26 @@ class SimulationVisualizer:
             pts_y.append(r * math.sin(th))
         return pts_x, pts_y
 
+    @staticmethod
+    def _tick_to_angle(tick: int) -> float:
+        # 2048 ~ zero; full-scale wraps to [-pi, pi)
+        return ((tick % TICKS) - (TICKS // 2)) / TICKS * (2.0 * math.pi)
+
+    def _fk_points(self, ticks: List[int]) -> tuple[List[float], List[float]]:
+        n = min(5, len(ticks), len(self.link_lengths))
+        xs = [0.0]
+        ys = [0.0]
+        th = 0.0
+        x = 0.0
+        y = 0.0
+        for i in range(n):
+            th += self._tick_to_angle(ticks[i])
+            x += self.link_lengths[i] * math.cos(th)
+            y += self.link_lengths[i] * math.sin(th)
+            xs.append(x)
+            ys.append(y)
+        return xs, ys
+
     def update(self, force: bool = False) -> None:
         now = time.time()
         if not force and (now - self._last_update) < self.refresh_s:
@@ -284,6 +332,16 @@ class SimulationVisualizer:
             lines.append(f"ID {sid}: pos={s['pos']} goal={s['goal']} load={s['load']} off={u16_to_i16(s['offset'])}")
 
         self.info.set_text("\n".join(lines))
+
+        if self.ax_arm is not None:
+            joint_ids = self.ids[:5]
+            pos_ticks = [self.sim.state[sid]["pos"] for sid in joint_ids]
+            goal_ticks = [self.sim.state[sid]["goal"] for sid in joint_ids]
+            xs, ys = self._fk_points(pos_ticks)
+            gx, gy = self._fk_points(goal_ticks)
+            self.arm_line.set_data(xs, ys)
+            self.arm_goal_line.set_data(gx, gy)
+
         self.fig.canvas.draw_idle()
         self.plt.pause(0.001)
 
@@ -384,6 +442,12 @@ def main() -> None:
     ap.add_argument("--simulate", action="store_true", help="run against built-in simulator")
     ap.add_argument("--visualize", action="store_true", help="show live 2D view (simulate mode)")
     ap.add_argument("--viz-refresh-ms", type=int, default=40, help="visualization refresh period")
+    ap.add_argument("--arm-view", action="store_true", help="add planar SO101-like 5-joint arm view")
+    ap.add_argument(
+        "--link-lengths",
+        default="0.32,0.27,0.22,0.16,0.12",
+        help="comma-separated link lengths for arm view (meters or relative units)",
+    )
     ap.add_argument("--apply", action="store_true", help="actually send goal positions (default dry-run)")
     ap.add_argument("--step", type=int, default=4, help="ticks per step")
     ap.add_argument("--pause-ms", type=int, default=60)
@@ -413,6 +477,11 @@ def main() -> None:
     if args.visualize and not args.simulate:
         raise SystemExit("--visualize only works with --simulate")
 
+    try:
+        link_lengths = [float(x.strip()) for x in args.link_lengths.split(",") if x.strip()]
+    except ValueError:
+        raise SystemExit("--link-lengths must be comma-separated numbers")
+
     dry_run = not args.apply
     no_wrap = args.no_wrap and not args.allow_wrap
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
@@ -426,7 +495,13 @@ def main() -> None:
         sim_backend = SimBackend(args.ids)
         backend = sim_backend
         if args.visualize:
-            visualizer = SimulationVisualizer(sim_backend, args.ids, refresh_ms=args.viz_refresh_ms)
+            visualizer = SimulationVisualizer(
+                sim_backend,
+                args.ids,
+                refresh_ms=args.viz_refresh_ms,
+                arm_view=args.arm_view,
+                link_lengths=link_lengths,
+            )
         print("Backend: SIM")
     else:
         if not args.port:
