@@ -13,8 +13,13 @@ Default is SAFE-DRY-RUN (no writes).
 """
 
 import argparse
+import threading
 import time
 from dataclasses import dataclass
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional
 
 import serial
@@ -292,6 +297,148 @@ class SimulationVisualizer:
         self.plt.show(block=False)
 
 
+class WebSimulationVisualizer:
+    def __init__(
+        self,
+        sim: SimBackend,
+        ids: List[int],
+        refresh_ms: int = 120,
+        bind: str = "127.0.0.1",
+        port: int = 8765,
+    ):
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            raise SystemExit("--visualize-web requires matplotlib (pip install matplotlib)") from exc
+
+        self.sim = sim
+        self.ids = ids
+        self.refresh_s = max(0.04, refresh_ms / 1000.0)
+        self._last_update = 0.0
+        self.plt = plt
+
+        self._tmp = TemporaryDirectory(prefix="endstop-viz-")
+        self.root = Path(self._tmp.name)
+        self.frame_path = self.root / "frame.png"
+        self._write_index_html(bind, port)
+
+        self.fig, self.ax = plt.subplots(figsize=(7, 7), dpi=120)
+        self.ax.set_title("Endstop simulator (2D web)")
+        self.ax.set_aspect("equal", adjustable="box")
+        self.ax.set_xlim(-1.8, 1.8)
+        self.ax.set_ylim(-1.8, 1.8)
+        self.ax.grid(True, alpha=0.25)
+
+        self._pos = {}
+        self._goal = {}
+        for idx, sid in enumerate(ids):
+            ring = 0.6 + idx * 0.3
+            state = self.sim.state[sid]
+            mn, mx = state["min"], state["max"]
+            arc_x, arc_y = self._arc_points(mn, mx, ring)
+            self.ax.plot(arc_x, arc_y, linewidth=2, alpha=0.35)
+            self.ax.text(0, ring + 0.06, f"ID {sid}", fontsize=8, ha="center")
+            pos_dot = self.ax.plot([], [], "o", markersize=8)[0]
+            goal_dot = self.ax.plot([], [], "x", markersize=8)[0]
+            self._pos[sid] = (ring, pos_dot)
+            self._goal[sid] = (ring, goal_dot)
+
+        self.info = self.ax.text(-1.75, -1.7, "", fontsize=8, va="bottom")
+
+        handler = partial(SimpleHTTPRequestHandler, directory=str(self.root))
+        self.httpd = ThreadingHTTPServer((bind, port), handler)
+        self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self._thread.start()
+        print(f"Web visualization: http://{bind}:{port}")
+        print("Tip: if running remote, expose this port via tunnel/Tailscale.")
+
+        self.update(force=True)
+
+    def _write_index_html(self, bind: str, port: int) -> None:
+        html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>Endstop Simulator</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 10px; background:#111; color:#eee; }}
+    img {{ width: 100%; max-width: 900px; border:1px solid #444; background:#fff; }}
+    .meta {{ color:#bbb; margin: 8px 0; }}
+  </style>
+</head>
+<body>
+  <h3>Endstop simulator 2D view</h3>
+  <div class=\"meta\">Source: {bind}:{port}</div>
+  <img id=\"frame\" src=\"frame.png\" />
+  <script>
+    const img = document.getElementById('frame');
+    setInterval(() => {{
+      img.src = 'frame.png?t=' + Date.now();
+    }}, 250);
+  </script>
+</body>
+</html>
+"""
+        (self.root / "index.html").write_text(html, encoding="utf-8")
+
+    @staticmethod
+    def _tick_to_xy(tick: int, r: float) -> tuple[float, float]:
+        import math
+
+        th = (tick % TICKS) / TICKS * (2.0 * math.pi)
+        return r * math.cos(th), r * math.sin(th)
+
+    def _arc_points(self, a: int, b: int, r: float, n: int = 90):
+        import math
+
+        d = circular_delta(a, b)
+        pts_x = []
+        pts_y = []
+        for i in range(n + 1):
+            t = i / n
+            tick = wrap_tick(int(round(a + d * t)))
+            th = tick / TICKS * (2.0 * math.pi)
+            pts_x.append(r * math.cos(th))
+            pts_y.append(r * math.sin(th))
+        return pts_x, pts_y
+
+    def update(self, force: bool = False) -> None:
+        now = time.time()
+        if not force and (now - self._last_update) < self.refresh_s:
+            return
+        self._last_update = now
+
+        lines = []
+        for sid in self.ids:
+            s = self.sim.state[sid]
+            r, pos_dot = self._pos[sid]
+            x, y = self._tick_to_xy(s["pos"], r)
+            pos_dot.set_data([x], [y])
+
+            r, goal_dot = self._goal[sid]
+            xg, yg = self._tick_to_xy(s["goal"], r)
+            goal_dot.set_data([xg], [yg])
+            lines.append(f"ID {sid}: pos={s['pos']} goal={s['goal']} load={s['load']} off={u16_to_i16(s['offset'])}")
+
+        self.info.set_text("\n".join(lines))
+        self.fig.tight_layout()
+        self.fig.savefig(self.frame_path)
+
+    def close(self) -> None:
+        try:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+        except Exception:
+            pass
+        try:
+            self._tmp.cleanup()
+        except Exception:
+            pass
+
+
 def u16_to_i16(v: int) -> int:
     return v if v < 32768 else v - 65536
 
@@ -382,8 +529,11 @@ def main() -> None:
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--ids", nargs="+", type=int, required=True)
     ap.add_argument("--simulate", action="store_true", help="run against built-in simulator")
-    ap.add_argument("--visualize", action="store_true", help="show live 2D view (simulate mode)")
+    ap.add_argument("--visualize", action="store_true", help="show live 2D desktop view (simulate mode)")
+    ap.add_argument("--visualize-web", action="store_true", help="serve live 2D view over HTTP (simulate mode)")
     ap.add_argument("--viz-refresh-ms", type=int, default=40, help="visualization refresh period")
+    ap.add_argument("--web-bind", default="127.0.0.1", help="bind address for --visualize-web")
+    ap.add_argument("--web-port", type=int, default=8765, help="port for --visualize-web")
     ap.add_argument("--apply", action="store_true", help="actually send goal positions (default dry-run)")
     ap.add_argument("--step", type=int, default=4, help="ticks per step")
     ap.add_argument("--pause-ms", type=int, default=60)
@@ -410,8 +560,10 @@ def main() -> None:
 
     args = ap.parse_args()
 
-    if args.visualize and not args.simulate:
-        raise SystemExit("--visualize only works with --simulate")
+    if (args.visualize or args.visualize_web) and not args.simulate:
+        raise SystemExit("--visualize/--visualize-web only work with --simulate")
+    if args.visualize and args.visualize_web:
+        raise SystemExit("choose only one: --visualize OR --visualize-web")
 
     dry_run = not args.apply
     no_wrap = args.no_wrap and not args.allow_wrap
@@ -420,13 +572,21 @@ def main() -> None:
 
     backend: Backend
     serial_backend: Optional[SerialBackend] = None
-    visualizer: Optional[SimulationVisualizer] = None
+    visualizer: Optional[object] = None
 
     if args.simulate:
         sim_backend = SimBackend(args.ids)
         backend = sim_backend
         if args.visualize:
             visualizer = SimulationVisualizer(sim_backend, args.ids, refresh_ms=args.viz_refresh_ms)
+        elif args.visualize_web:
+            visualizer = WebSimulationVisualizer(
+                sim_backend,
+                args.ids,
+                refresh_ms=max(80, args.viz_refresh_ms),
+                bind=args.web_bind,
+                port=args.web_port,
+            )
         print("Backend: SIM")
     else:
         if not args.port:

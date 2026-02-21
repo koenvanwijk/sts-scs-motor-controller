@@ -109,6 +109,15 @@ In simulator mode, you can now also open a **live 2D visualization** of each ser
 python3 scripts/calibrate_endstops.py --simulate --visualize --ids 1 2 3
 ```
 
+Remote/phone mode (served over HTTP):
+
+```bash
+python3 scripts/calibrate_endstops.py \
+  --simulate --visualize-web --web-bind 0.0.0.0 --web-port 8765 \
+  --ids 1 2 3
+```
+
+Then open `http://<host-ip>:8765` from your phone browser.
 
 ```text
 zero_tick = circular_midpoint(min_stop, max_stop)
