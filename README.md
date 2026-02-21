@@ -102,7 +102,13 @@ I added a safe-first calibration script and visual guide:
 - guide: `docs/endstop_calibration.md`
 - script: `scripts/calibrate_endstops.py`
 
-The script can walk to both endstops slowly, monitor load, and suggest a **circular midpoint**:
+The script can walk to both endstops slowly, monitor load, and suggest a **circular midpoint**.
+In simulator mode, you can now also open a **live 2D visualization** of each servo ring (current position + goal):
+
+```bash
+python3 scripts/calibrate_endstops.py --simulate --visualize --ids 1 2 3
+```
+
 
 ```text
 zero_tick = circular_midpoint(min_stop, max_stop)

@@ -15,7 +15,7 @@ Default is SAFE-DRY-RUN (no writes).
 import argparse
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import serial
 
@@ -201,6 +201,97 @@ class SimBackend(Backend):
         return True
 
 
+class SimulationVisualizer:
+    def __init__(self, sim: SimBackend, ids: List[int], refresh_ms: int = 40):
+        try:
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            raise SystemExit(
+                "--visualize requires matplotlib (pip install matplotlib)"
+            ) from exc
+
+        self.sim = sim
+        self.ids = ids
+        self.refresh_s = max(0.01, refresh_ms / 1000.0)
+        self._last_update = 0.0
+
+        self.plt = plt
+        self.fig, self.ax = plt.subplots(figsize=(7, 7))
+        self.ax.set_title("Endstop simulator (2D)")
+        self.ax.set_aspect("equal", adjustable="box")
+        self.ax.set_xlim(-1.8, 1.8)
+        self.ax.set_ylim(-1.8, 1.8)
+        self.ax.grid(True, alpha=0.25)
+
+        self._pos = {}
+        self._goal = {}
+
+        for idx, sid in enumerate(ids):
+            ring = 0.6 + idx * 0.3
+            state = self.sim.state[sid]
+            mn, mx = state["min"], state["max"]
+            arc_x, arc_y = self._arc_points(mn, mx, ring)
+            self.ax.plot(arc_x, arc_y, linewidth=2, alpha=0.35)
+            self.ax.text(0, ring + 0.06, f"ID {sid}", fontsize=8, ha="center")
+
+            pos_dot = self.ax.plot([], [], "o", markersize=8)[0]
+            goal_dot = self.ax.plot([], [], "x", markersize=8)[0]
+            self._pos[sid] = (ring, pos_dot)
+            self._goal[sid] = (ring, goal_dot)
+
+        self.info = self.ax.text(-1.75, -1.7, "", fontsize=8, va="bottom")
+        self.plt.ion()
+        self.update(force=True)
+
+    @staticmethod
+    def _tick_to_xy(tick: int, r: float) -> tuple[float, float]:
+        import math
+
+        th = (tick % TICKS) / TICKS * (2.0 * math.pi)
+        return r * math.cos(th), r * math.sin(th)
+
+    def _arc_points(self, a: int, b: int, r: float, n: int = 90):
+        import math
+
+        d = circular_delta(a, b)
+        pts_x = []
+        pts_y = []
+        for i in range(n + 1):
+            t = i / n
+            tick = wrap_tick(int(round(a + d * t)))
+            th = tick / TICKS * (2.0 * math.pi)
+            pts_x.append(r * math.cos(th))
+            pts_y.append(r * math.sin(th))
+        return pts_x, pts_y
+
+    def update(self, force: bool = False) -> None:
+        now = time.time()
+        if not force and (now - self._last_update) < self.refresh_s:
+            return
+        self._last_update = now
+
+        lines = []
+        for sid in self.ids:
+            s = self.sim.state[sid]
+            r, pos_dot = self._pos[sid]
+            x, y = self._tick_to_xy(s["pos"], r)
+            pos_dot.set_data([x], [y])
+
+            r, goal_dot = self._goal[sid]
+            xg, yg = self._tick_to_xy(s["goal"], r)
+            goal_dot.set_data([xg], [yg])
+
+            lines.append(f"ID {sid}: pos={s['pos']} goal={s['goal']} load={s['load']} off={u16_to_i16(s['offset'])}")
+
+        self.info.set_text("\n".join(lines))
+        self.fig.canvas.draw_idle()
+        self.plt.pause(0.001)
+
+    def close(self) -> None:
+        self.plt.ioff()
+        self.plt.show(block=False)
+
+
 def u16_to_i16(v: int) -> int:
     return v if v < 32768 else v - 65536
 
@@ -226,6 +317,7 @@ def detect_stop(
     no_wrap: bool,
     hard_min: int,
     hard_max: int,
+    on_step: Optional[Callable[[], None]] = None,
 ) -> Optional[int]:
     pos_hist: List[int] = []
 
@@ -251,6 +343,9 @@ def detect_stop(
         if not ok:
             return None
 
+        if on_step is not None:
+            on_step()
+
         time.sleep(pause_s)
 
         pos = backend.read_u16(servo_id, pos_addr)
@@ -263,6 +358,9 @@ def detect_stop(
             pos_hist.pop(0)
 
         load_mag = load & 0x3FF
+
+        if on_step is not None:
+            on_step()
 
         if len(pos_hist) >= stall_window:
             moved = circular_span(pos_hist)
@@ -284,6 +382,8 @@ def main() -> None:
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--ids", nargs="+", type=int, required=True)
     ap.add_argument("--simulate", action="store_true", help="run against built-in simulator")
+    ap.add_argument("--visualize", action="store_true", help="show live 2D view (simulate mode)")
+    ap.add_argument("--viz-refresh-ms", type=int, default=40, help="visualization refresh period")
     ap.add_argument("--apply", action="store_true", help="actually send goal positions (default dry-run)")
     ap.add_argument("--step", type=int, default=4, help="ticks per step")
     ap.add_argument("--pause-ms", type=int, default=60)
@@ -310,6 +410,9 @@ def main() -> None:
 
     args = ap.parse_args()
 
+    if args.visualize and not args.simulate:
+        raise SystemExit("--visualize only works with --simulate")
+
     dry_run = not args.apply
     no_wrap = args.no_wrap and not args.allow_wrap
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
@@ -317,9 +420,13 @@ def main() -> None:
 
     backend: Backend
     serial_backend: Optional[SerialBackend] = None
+    visualizer: Optional[SimulationVisualizer] = None
 
     if args.simulate:
-        backend = SimBackend(args.ids)
+        sim_backend = SimBackend(args.ids)
+        backend = sim_backend
+        if args.visualize:
+            visualizer = SimulationVisualizer(sim_backend, args.ids, refresh_ms=args.viz_refresh_ms)
         print("Backend: SIM")
     else:
         if not args.port:
@@ -358,6 +465,7 @@ def main() -> None:
                     no_wrap=no_wrap,
                     hard_min=args.hard_min,
                     hard_max=args.hard_max,
+                    on_step=visualizer.update if visualizer else None,
                 )
                 max_stop = detect_stop(
                     backend,
@@ -375,6 +483,7 @@ def main() -> None:
                     no_wrap=no_wrap,
                     hard_min=args.hard_min,
                     hard_max=args.hard_max,
+                    on_step=visualizer.update if visualizer else None,
                 )
 
                 print(f"ID {sid} attempt={attempt} min_stop={min_stop} max_stop={max_stop} offset={current_offset}")
@@ -412,6 +521,8 @@ def main() -> None:
                     print(f"ID {sid} offset-assist write failed")
                     break
                 current_offset = proposed
+                if visualizer:
+                    visualizer.update(force=True)
                 print(f"ID {sid} offset-assist applied: {current_offset}")
 
             midpoint = None
@@ -419,12 +530,16 @@ def main() -> None:
             if min_stop is not None and max_stop is not None:
                 midpoint = circular_midpoint(min_stop, max_stop)
                 ok = backend.write_u16(sid, args.addr_goal, midpoint, dry_run)
+                if visualizer:
+                    visualizer.update(force=True)
                 print(f"ID {sid} midpoint={midpoint}, move_ok={ok}")
 
                 if args.write_offset:
                     # Offset is applied so midpoint maps toward offset_center_tick.
                     offset = circular_delta(midpoint, args.offset_center_tick)
                     ok_off = write_i16(backend, sid, args.addr_offset, offset, dry_run)
+                    if visualizer:
+                        visualizer.update(force=True)
                     offset_written = offset if ok_off else None
                     print(
                         f"ID {sid} offset_write addr={args.addr_offset} value={offset} ok={ok_off}"
@@ -435,6 +550,8 @@ def main() -> None:
     finally:
         if serial_backend is not None:
             serial_backend.close()
+        if visualizer is not None:
+            visualizer.close()
 
     print("\n=== Suggested zero ticks ===")
     for r in results:
