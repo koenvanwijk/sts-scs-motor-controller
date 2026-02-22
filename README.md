@@ -95,48 +95,14 @@ let tick_from_deg = conv.deg_to_tick(deg);
 - Startup checks include missing-ID scan and optional voltage threshold check (default threshold `45`, i.e. ~4.5V in 0.1V units).
 - If CI fails on Linux with serial dependencies, ensure `pkg-config` and `libudev-dev` are installed.
 
-## Endstop auto-calibration (slow + monitored)
+## Arm-specific calibration tools
 
-I added a safe-first calibration script and visual guide:
+Arm/workflow-specific calibration scripts were moved out to a separate repo:
 
-- guide: `docs/endstop_calibration.md`
-- script: `scripts/calibrate_endstops.py`
+- `../so101-arm-calibration`
 
-The script can walk to both endstops slowly, monitor load, and suggest a **circular midpoint**.
-In simulator mode, you can now also open a **live 2D visualization** of each servo ring (current position + goal):
+This keeps this repository focused on reusable motor-controller core functionality.
 
-```bash
-python3 scripts/calibrate_endstops.py --simulate --visualize --ids 1 2 3
-```
-
-Remote/phone mode (served over HTTP):
-
-```bash
-python3 scripts/calibrate_endstops.py \
-  --simulate --visualize-web --web-bind 0.0.0.0 --web-port 8765 \
-  --ids 1 2 3
-```
-
-Then open `http://<host-ip>:8765` from your phone browser.
-
-For a continuous movement demo (without calibration flow), add `--demo-loop`:
-
-```bash
-python3 scripts/calibrate_endstops.py \
-  --simulate --visualize-web --demo-loop \
-  --web-bind 0.0.0.0 --web-port 8765 \
-  --ids 1 2 3 4 5 6
-```
-
-```text
-zero_tick = circular_midpoint(min_stop, max_stop)
-```
-
-It can also write a persistent motor offset (`--write-offset`) after midpoint detection.
-
-New: optional **offset-assist mode** (`--offset-assist`) for cases where no-wrap limits prevent reaching a stop; it applies bounded offset nudges without ever wrapping commanded setpoints.
-
-Default mode is **dry-run**; add `--apply` when you're ready.
 
 ## Roadmap
 
