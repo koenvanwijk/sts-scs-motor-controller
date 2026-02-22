@@ -53,6 +53,18 @@ impl FeetechPyController {
         Ok(snap.positions)
     }
 
+    pub fn get_last_health(&self) -> PyResult<(Vec<f64>, Vec<u8>, Vec<Option<bool>>, f64)> {
+        let guard = self
+            .handle
+            .lock()
+            .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("controller lock poisoned"))?;
+        let handle = guard
+            .as_ref()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("controller is closed"))?;
+        let snap = handle.last_snapshot().map_err(to_py_err)?;
+        Ok((snap.positions, snap.voltages, snap.torque_enabled, snap.timestamp_s))
+    }
+
     pub fn set_goal_positions(&self, ids: Vec<u8>, positions: Vec<f64>) -> PyResult<()> {
         let guard = self
             .handle

@@ -28,6 +28,8 @@ impl Default for ControlLoopConfig {
 pub struct MotorSnapshot {
     pub ids: Vec<MotorId>,
     pub positions: Vec<f64>,
+    pub voltages: Vec<u8>,
+    pub torque_enabled: Vec<Option<bool>>,
     pub timestamp_s: f64,
 }
 
@@ -97,22 +99,40 @@ pub fn start_control_loop<T: MotorTransport>(
     std::thread::spawn(move || {
         Runtime::new().expect("tokio runtime").block_on(async move {
             let mut interval = time::interval(cfg.read_period);
+            let mut torque_state: Vec<Option<bool>> = vec![None; all_ids.len()];
 
             loop {
                 tokio::select! {
                     Some(cmd) = rx.recv() => {
                         let res = match cmd {
                             MotorCommand::SetGoalPositions { ids, positions } => transport.write_goal_positions(&ids, &positions),
-                            MotorCommand::SetTorque { ids, enabled } => transport.set_torque(&ids, enabled),
+                            MotorCommand::SetTorque { ids, enabled } => {
+                                let r = transport.set_torque(&ids, enabled);
+                                if r.is_ok() {
+                                    for id in &ids {
+                                        if let Some(idx) = all_ids.iter().position(|x| x == id) {
+                                            torque_state[idx] = Some(enabled);
+                                        }
+                                    }
+                                }
+                                r
+                            },
                         };
                         if let Err(e) = res {
                             warn!("command failed: {e}");
                         }
                     }
                     _ = interval.tick() => {
-                        let read = transport.read_positions(&all_ids).map(|positions| {
+                        let read = transport.read_positions(&all_ids).and_then(|positions| {
+                            let voltages = transport.read_voltages(&all_ids).unwrap_or_else(|_| vec![0; all_ids.len()]);
                             let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO).as_secs_f64();
-                            MotorSnapshot { ids: all_ids.clone(), positions, timestamp_s: ts }
+                            Ok(MotorSnapshot {
+                                ids: all_ids.clone(),
+                                positions,
+                                voltages,
+                                torque_enabled: torque_state.clone(),
+                                timestamp_s: ts,
+                            })
                         });
                         if let Ok(mut guard) = snapshot_clone.lock() {
                             *guard = read;
