@@ -436,7 +436,9 @@ class WebSimulationVisualizer:
         lines.append(f"frame={self._frame_no} t={time.strftime('%H:%M:%S')}")
         self.info.set_text("\n".join(lines))
         self.fig.tight_layout()
-        self.fig.savefig(self.frame_path)
+        tmp_path = self.root / "frame.next.png"
+        self.fig.savefig(tmp_path)
+        tmp_path.replace(self.frame_path)
 
     def close(self) -> None:
         try:
